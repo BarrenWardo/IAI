@@ -220,11 +220,17 @@ class LoKRLayer(LoRALayerBase):
         if self.w1 is None:
             self.w1_a = values["lokr_w1_a"]
             self.w1_b = values["lokr_w1_b"]
+        else:
+            self.w1_b = None
+            self.w1_a = None
 
         self.w2 = values.get("lokr_w2", None)
         if self.w2 is None:
             self.w2_a = values["lokr_w2_a"]
             self.w2_b = values["lokr_w2_b"]
+        else:
+            self.w2_a = None
+            self.w2_b = None
 
         self.t2 = values.get("lokr_t2", None)
 
@@ -372,7 +378,39 @@ class IA3Layer(LoRALayerBase):
         self.on_input = self.on_input.to(device=device, dtype=dtype)
 
 
-AnyLoRALayer = Union[LoRALayer, LoHALayer, LoKRLayer, FullLayer, IA3Layer]
+class NormLayer(LoRALayerBase):
+    # bias handled in LoRALayerBase(calc_size, to)
+    # weight: torch.Tensor
+    # bias: Optional[torch.Tensor]
+
+    def __init__(
+        self,
+        layer_key: str,
+        values: Dict[str, torch.Tensor],
+    ):
+        super().__init__(layer_key, values)
+
+        self.weight = values["w_norm"]
+        self.bias = values.get("b_norm", None)
+
+        self.rank = None  # unscaled
+        self.check_keys(values, {"w_norm", "b_norm"})
+
+    def get_weight(self, orig_weight: torch.Tensor) -> torch.Tensor:
+        return self.weight
+
+    def calc_size(self) -> int:
+        model_size = super().calc_size()
+        model_size += self.weight.nelement() * self.weight.element_size()
+        return model_size
+
+    def to(self, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None) -> None:
+        super().to(device=device, dtype=dtype)
+
+        self.weight = self.weight.to(device=device, dtype=dtype)
+
+
+AnyLoRALayer = Union[LoRALayer, LoHALayer, LoKRLayer, FullLayer, IA3Layer, NormLayer]
 
 
 class LoRAModelRaw(RawModel):  # (torch.nn.Module):
@@ -512,6 +550,10 @@ class LoRAModelRaw(RawModel):  # (torch.nn.Module):
             # ia3
             elif "on_input" in values:
                 layer = IA3Layer(layer_key, values)
+
+            # norms
+            elif "w_norm" in values:
+                layer = NormLayer(layer_key, values)
 
             else:
                 print(f">> Encountered unknown lora layer module in {model.name}: {layer_key} - {list(values.keys())}")
