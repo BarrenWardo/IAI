@@ -4,14 +4,18 @@ import { containsFiles, getFiles } from '@atlaskit/pragmatic-drag-and-drop/exter
 import { preventUnhandled } from '@atlaskit/pragmatic-drag-and-drop/prevent-unhandled';
 import type { SystemStyleObject } from '@invoke-ai/ui-library';
 import { Box, Flex, Heading } from '@invoke-ai/ui-library';
+import { useStore } from '@nanostores/react';
 import { getStore } from 'app/store/nanostores/store';
 import { useAppSelector } from 'app/store/storeHooks';
+import { setFileToPaste } from 'features/controlLayers/components/CanvasPasteModal';
 import { DndDropOverlay } from 'features/dnd/DndDropOverlay';
 import type { DndTargetState } from 'features/dnd/types';
+import { $imageViewer } from 'features/gallery/components/ImageViewer/useImageViewer';
 import { selectAutoAddBoardId } from 'features/gallery/store/gallerySelectors';
 import { selectMaxImageUploadCount } from 'features/system/store/configSlice';
 import { toast } from 'features/toast/toast';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { selectActiveTab } from 'features/ui/store/uiSelectors';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { uploadImages } from 'services/api/endpoints/images';
 import { useBoardName } from 'services/api/hooks/useBoardName';
@@ -71,12 +75,13 @@ export const FullscreenDropzone = memo(() => {
   const ref = useRef<HTMLDivElement>(null);
   const maxImageUploadCount = useAppSelector(selectMaxImageUploadCount);
   const [dndState, setDndState] = useState<DndTargetState>('idle');
-
-  const uploadFilesSchema = useMemo(() => getFilesSchema(maxImageUploadCount), [maxImageUploadCount]);
+  const activeTab = useAppSelector(selectActiveTab);
+  const isImageViewerOpen = useStore($imageViewer);
 
   const validateAndUploadFiles = useCallback(
     (files: File[]) => {
       const { getState } = getStore();
+      const uploadFilesSchema = getFilesSchema(maxImageUploadCount);
       const parseResult = uploadFilesSchema.safeParse(files);
 
       if (!parseResult.success) {
@@ -93,6 +98,15 @@ export const FullscreenDropzone = memo(() => {
         });
         return;
       }
+
+      // While on the canvas tab and when pasting a single image, canvas may want to create a new layer. Let it handle
+      // the paste event.
+      const [firstImageFile] = files;
+      if (!isImageViewerOpen && activeTab === 'canvas' && files.length === 1 && firstImageFile) {
+        setFileToPaste(firstImageFile);
+        return;
+      }
+
       const autoAddBoardId = selectAutoAddBoardId(getState());
 
       const uploadArgs: UploadImageArg[] = files.map((file, i) => ({
@@ -105,7 +119,18 @@ export const FullscreenDropzone = memo(() => {
 
       uploadImages(uploadArgs);
     },
-    [maxImageUploadCount, t, uploadFilesSchema]
+    [activeTab, isImageViewerOpen, maxImageUploadCount, t]
+  );
+
+  const onPaste = useCallback(
+    (e: ClipboardEvent) => {
+      if (!e.clipboardData?.files) {
+        return;
+      }
+      const files = Array.from(e.clipboardData.files);
+      validateAndUploadFiles(files);
+    },
+    [validateAndUploadFiles]
   );
 
   useEffect(() => {
@@ -144,24 +169,12 @@ export const FullscreenDropzone = memo(() => {
   }, [validateAndUploadFiles]);
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    document.addEventListener(
-      'paste',
-      (e) => {
-        if (!e.clipboardData?.files) {
-          return;
-        }
-        const files = Array.from(e.clipboardData.files);
-        validateAndUploadFiles(files);
-      },
-      { signal: controller.signal }
-    );
+    window.addEventListener('paste', onPaste);
 
     return () => {
-      controller.abort();
+      window.removeEventListener('paste', onPaste);
     };
-  }, [validateAndUploadFiles]);
+  }, [onPaste]);
 
   return (
     <Box ref={ref} data-dnd-state={dndState} sx={sx}>

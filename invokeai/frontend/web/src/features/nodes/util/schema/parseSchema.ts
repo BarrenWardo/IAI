@@ -64,6 +64,32 @@ const isAllowedOutputField = (nodeType: string, fieldName: string) => {
   return true;
 };
 
+const isBatchInputField = (nodeType: string, fieldName: string) => {
+  if (nodeType === 'float_batch' && fieldName === 'floats') {
+    return true;
+  }
+  if (nodeType === 'integer_batch' && fieldName === 'integers') {
+    return true;
+  }
+  if (nodeType === 'string_batch' && fieldName === 'strings') {
+    return true;
+  }
+  return false;
+};
+
+const isBatchOutputField = (nodeType: string, fieldName: string) => {
+  if (nodeType === 'float_generator' && fieldName === 'floats') {
+    return true;
+  }
+  if (nodeType === 'integer_generator' && fieldName === 'integers') {
+    return true;
+  }
+  if (nodeType === 'string_generator' && fieldName === 'strings') {
+    return true;
+  }
+  return false;
+};
+
 const isNotInDenylist = (schema: InvocationSchemaObject) =>
   !invocationDenylist.includes(schema.properties.type.default);
 
@@ -107,6 +133,7 @@ export const parseSchema = (
           ? {
               name: property.ui_type,
               cardinality: isCollectionFieldType(property.ui_type) ? 'COLLECTION' : 'SINGLE',
+              batch: false,
             }
           : null;
 
@@ -125,6 +152,10 @@ export const parseSchema = (
 
         if (isStatefulFieldType(fieldType) && originalFieldType && !isEqual(originalFieldType, fieldType)) {
           fieldType.originalType = deepClone(originalFieldType);
+        }
+
+        if (isBatchInputField(type, propertyName)) {
+          fieldType.batch = true;
         }
 
         const fieldInputTemplate = buildFieldInputTemplate(property, propertyName, fieldType);
@@ -172,6 +203,7 @@ export const parseSchema = (
           ? {
               name: property.ui_type,
               cardinality: isCollectionFieldType(property.ui_type) ? 'COLLECTION' : 'SINGLE',
+              batch: false,
             }
           : null;
 
@@ -185,6 +217,10 @@ export const parseSchema = (
 
         if (isStatefulFieldType(fieldType) && originalFieldType && !isEqual(originalFieldType, fieldType)) {
           fieldType.originalType = deepClone(originalFieldType);
+        }
+
+        if (isBatchOutputField(type, propertyName)) {
+          fieldType.batch = true;
         }
 
         const fieldOutputTemplate = buildFieldOutputTemplate(property, propertyName, fieldType);

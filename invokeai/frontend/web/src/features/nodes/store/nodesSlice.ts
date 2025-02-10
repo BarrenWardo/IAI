@@ -16,10 +16,13 @@ import type {
   EnumFieldValue,
   FieldValue,
   FloatFieldValue,
+  FloatGeneratorFieldValue,
   FluxVAEModelFieldValue,
   ImageFieldCollectionValue,
   ImageFieldValue,
+  IntegerFieldCollectionValue,
   IntegerFieldValue,
+  IntegerGeneratorFieldValue,
   IPAdapterModelFieldValue,
   LoRAModelFieldValue,
   MainModelFieldValue,
@@ -28,7 +31,9 @@ import type {
   SDXLRefinerModelFieldValue,
   SpandrelImageToImageModelFieldValue,
   StatefulFieldValue,
+  StringFieldCollectionValue,
   StringFieldValue,
+  StringGeneratorFieldValue,
   T2IAdapterModelFieldValue,
   T5EncoderModelFieldValue,
   VAEModelFieldValue,
@@ -43,11 +48,15 @@ import {
   zControlLoRAModelFieldValue,
   zControlNetModelFieldValue,
   zEnumFieldValue,
+  zFloatFieldCollectionValue,
   zFloatFieldValue,
+  zFloatGeneratorFieldValue,
   zFluxVAEModelFieldValue,
   zImageFieldCollectionValue,
   zImageFieldValue,
+  zIntegerFieldCollectionValue,
   zIntegerFieldValue,
+  zIntegerGeneratorFieldValue,
   zIPAdapterModelFieldValue,
   zLoRAModelFieldValue,
   zMainModelFieldValue,
@@ -56,7 +65,9 @@ import {
   zSDXLRefinerModelFieldValue,
   zSpandrelImageToImageModelFieldValue,
   zStatefulFieldValue,
+  zStringFieldCollectionValue,
   zStringFieldValue,
+  zStringGeneratorFieldValue,
   zT2IAdapterModelFieldValue,
   zT5EncoderModelFieldValue,
   zVAEModelFieldValue,
@@ -311,8 +322,14 @@ export const nodesSlice = createSlice({
     fieldStringValueChanged: (state, action: FieldValueAction<StringFieldValue>) => {
       fieldValueReducer(state, action, zStringFieldValue);
     },
+    fieldStringCollectionValueChanged: (state, action: FieldValueAction<StringFieldCollectionValue>) => {
+      fieldValueReducer(state, action, zStringFieldCollectionValue);
+    },
     fieldNumberValueChanged: (state, action: FieldValueAction<IntegerFieldValue | FloatFieldValue>) => {
       fieldValueReducer(state, action, zIntegerFieldValue.or(zFloatFieldValue));
+    },
+    fieldNumberCollectionValueChanged: (state, action: FieldValueAction<IntegerFieldCollectionValue>) => {
+      fieldValueReducer(state, action, zIntegerFieldCollectionValue.or(zFloatFieldCollectionValue));
     },
     fieldBooleanValueChanged: (state, action: FieldValueAction<BooleanFieldValue>) => {
       fieldValueReducer(state, action, zBooleanFieldValue);
@@ -383,6 +400,15 @@ export const nodesSlice = createSlice({
     fieldSchedulerValueChanged: (state, action: FieldValueAction<SchedulerFieldValue>) => {
       fieldValueReducer(state, action, zSchedulerFieldValue);
     },
+    fieldFloatGeneratorValueChanged: (state, action: FieldValueAction<FloatGeneratorFieldValue>) => {
+      fieldValueReducer(state, action, zFloatGeneratorFieldValue);
+    },
+    fieldIntegerGeneratorValueChanged: (state, action: FieldValueAction<IntegerGeneratorFieldValue>) => {
+      fieldValueReducer(state, action, zIntegerGeneratorFieldValue);
+    },
+    fieldStringGeneratorValueChanged: (state, action: FieldValueAction<StringGeneratorFieldValue>) => {
+      fieldValueReducer(state, action, zStringGeneratorFieldValue);
+    },
     notesNodeValueChanged: (state, action: PayloadAction<{ nodeId: string; value: string }>) => {
       const { nodeId, value } = action.payload;
       const nodeIndex = state.nodes.findIndex((n) => n.id === nodeId);
@@ -435,9 +461,11 @@ export const {
   fieldModelIdentifierValueChanged,
   fieldMainModelValueChanged,
   fieldNumberValueChanged,
+  fieldNumberCollectionValueChanged,
   fieldRefinerModelValueChanged,
   fieldSchedulerValueChanged,
   fieldStringValueChanged,
+  fieldStringCollectionValueChanged,
   fieldVaeModelValueChanged,
   fieldT5EncoderValueChanged,
   fieldCLIPEmbedValueChanged,
@@ -445,6 +473,9 @@ export const {
   fieldCLIPGEmbedValueChanged,
   fieldControlLoRAModelValueChanged,
   fieldFluxVAEModelValueChanged,
+  fieldFloatGeneratorValueChanged,
+  fieldIntegerGeneratorValueChanged,
+  fieldStringGeneratorValueChanged,
   nodeEditorReset,
   nodeIsIntermediateChanged,
   nodeIsOpenChanged,
@@ -546,9 +577,11 @@ export const isAnyNodeOrEdgeMutation = isAnyOf(
   fieldLoRAModelValueChanged,
   fieldMainModelValueChanged,
   fieldNumberValueChanged,
+  fieldNumberCollectionValueChanged,
   fieldRefinerModelValueChanged,
   fieldSchedulerValueChanged,
   fieldStringValueChanged,
+  fieldStringCollectionValueChanged,
   fieldVaeModelValueChanged,
   fieldT5EncoderValueChanged,
   fieldCLIPEmbedValueChanged,

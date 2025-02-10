@@ -177,7 +177,17 @@
         "none": "None",
         "new": "New",
         "generating": "Generating",
-        "warnings": "Warnings"
+        "warnings": "Warnings",
+        "start": "Start",
+        "count": "Count",
+        "step": "Step",
+        "end": "End",
+        "min": "Min",
+        "max": "Max",
+        "values": "Values",
+        "resetToDefaults": "Reset to Defaults",
+        "seed": "Seed",
+        "combinatorial": "Combinatorial"
     },
     "hrf": {
         "hrf": "High Resolution Fix",
@@ -209,9 +219,13 @@
         "pauseSucceeded": "Processor Paused",
         "pauseFailed": "Problem Pausing Processor",
         "cancel": "Cancel",
+        "cancelAllExceptCurrentQueueItemAlertDialog": "Canceling all queue items except the current one will stop pending items but allow the in-progress one to finish.",
+        "cancelAllExceptCurrentQueueItemAlertDialog2": "Are you sure you want to cancel all pending queue items?",
+        "cancelAllExceptCurrentTooltip": "Cancel All Except Current Item",
         "cancelTooltip": "Cancel Current Item",
         "cancelSucceeded": "Item Canceled",
         "cancelFailed": "Problem Canceling Item",
+        "confirm": "Confirm",
         "prune": "Prune",
         "pruneTooltip": "Prune {{item_count}} Completed Items",
         "pruneSucceeded": "Pruned {{item_count}} Completed Items from Queue",
@@ -284,10 +298,15 @@
         "disableFailed": "Problem Disabling Invocation Cache",
         "useCache": "Use Cache"
     },
+    "modelCache": {
+        "clear": "Clear Model Cache",
+        "clearSucceeded": "Model Cache Cleared",
+        "clearFailed": "Problem Clearing Model Cache"
+    },
     "gallery": {
         "gallery": "Gallery",
-        "alwaysShowImageSizeBadge": "Always Show Image Size Badge",
         "assets": "Assets",
+        "alwaysShowImageSizeBadge": "Always Show Image Size Badge",
         "assetsTab": "Files you’ve uploaded for use in your projects.",
         "autoAssignBoardOnClick": "Auto-Assign Board on Click",
         "autoSwitchNewImages": "Auto-Switch to New Images",
@@ -850,6 +869,19 @@
         "defaultVAE": "Default VAE"
     },
     "nodes": {
+        "arithmeticSequence": "Arithmetic Sequence",
+        "linearDistribution": "Linear Distribution",
+        "uniformRandomDistribution": "Uniform Random Distribution",
+        "parseString": "Parse String",
+        "splitOn": "Split On",
+        "noBatchGroup": "no group",
+        "generatorNRandomValues_one": "{{count}} random value",
+        "generatorNRandomValues_other": "{{count}} random values",
+        "generatorNoValues": "empty",
+        "generatorLoading": "loading",
+        "generatorLoadFromFile": "Load from File",
+        "dynamicPromptsRandom": "Dynamic Prompts (Random)",
+        "dynamicPromptsCombinatorial": "Dynamic Prompts (Combinatorial)",
         "addNode": "Add Node",
         "addNodeToolTip": "Add Node (Shift+A, Space)",
         "addLinearView": "Add to Linear View",
@@ -989,7 +1021,11 @@
         "imageAccessError": "Unable to find image {{image_name}}, resetting to default",
         "boardAccessError": "Unable to find board {{board_id}}, resetting to default",
         "modelAccessError": "Unable to find model {{key}}, resetting to default",
-        "saveToGallery": "Save To Gallery"
+        "saveToGallery": "Save To Gallery",
+        "addItem": "Add Item",
+        "generateValues": "Generate Values",
+        "floatRangeGenerator": "Float Range Generator",
+        "integerRangeGenerator": "Integer Range Generator"
     },
     "parameters": {
         "aspect": "Aspect",
@@ -1024,11 +1060,22 @@
             "addingImagesTo": "Adding images to",
             "invoke": "Invoke",
             "missingFieldTemplate": "Missing field template",
-            "missingInputForField": "{{nodeLabel}} -> {{fieldLabel}}: missing input",
+            "missingInputForField": "missing input",
             "missingNodeTemplate": "Missing node template",
-            "collectionEmpty": "{{nodeLabel}} -> {{fieldLabel}} empty collection",
-            "collectionTooFewItems": "{{nodeLabel}} -> {{fieldLabel}}: too few items, minimum {{minItems}}",
-            "collectionTooManyItems": "{{nodeLabel}} -> {{fieldLabel}}: too many items, maximum {{maxItems}}",
+            "emptyBatches": "empty batches",
+            "batchNodeNotConnected": "Batch node not connected: {{label}}",
+            "batchNodeEmptyCollection": "Some batch nodes have empty collections",
+            "invalidBatchConfigurationCannotCalculate": "Invalid batch configuration; cannot calculate",
+            "collectionTooFewItems": "too few items, minimum {{minItems}}",
+            "collectionTooManyItems": "too many items, maximum {{maxItems}}",
+            "collectionStringTooLong": "too long, max {{maxLength}}",
+            "collectionStringTooShort": "too short, min {{minLength}}",
+            "collectionNumberGTMax": "{{value}} > {{maximum}} (inc max)",
+            "collectionNumberLTMin": "{{value}} < {{minimum}} (inc min)",
+            "collectionNumberGTExclusiveMax": "{{value}} >= {{exclusiveMaximum}} (exc max)",
+            "collectionNumberLTExclusiveMin": "{{value}} <= {{exclusiveMinimum}} (exc min)",
+            "collectionNumberNotMultipleOf": "{{value}} not multiple of {{multipleOf}}",
+            "batchNodeCollectionSizeMismatch": "Collection size mismatch on Batch {{batchGroupId}}",
             "noModelSelected": "No model selected",
             "noT5EncoderModelSelected": "No T5 Encoder model selected for FLUX generation",
             "noFLUXVAEModelSelected": "No VAE model selected for FLUX generation",
@@ -1100,7 +1147,8 @@
             "perPromptLabel": "Seed per Image",
             "perPromptDesc": "Use a different seed for each image"
         },
-        "loading": "Generating Dynamic Prompts..."
+        "loading": "Generating Dynamic Prompts...",
+        "promptsToGenerate": "Prompts to Generate"
     },
     "sdxl": {
         "cfgScale": "CFG Scale",
@@ -1200,6 +1248,8 @@
         "problemCopyingLayer": "Unable to Copy Layer",
         "problemSavingLayer": "Unable to Save Layer",
         "problemDownloadingImage": "Unable to Download Image",
+        "pasteSuccess": "Pasted to {{destination}}",
+        "pasteFailed": "Paste Failed",
         "prunedQueue": "Pruned Queue",
         "sentToCanvas": "Sent to Canvas",
         "sentToUpscale": "Sent to Upscale",
@@ -1216,7 +1266,10 @@
         "workflowLoaded": "Workflow Loaded",
         "problemRetrievingWorkflow": "Problem Retrieving Workflow",
         "workflowDeleted": "Workflow Deleted",
-        "problemDeletingWorkflow": "Problem Deleting Workflow"
+        "problemDeletingWorkflow": "Problem Deleting Workflow",
+        "unableToCopy": "Unable to Copy",
+        "unableToCopyDesc": "Your browser does not support clipboard access. Firefox users may be able to fix this by following ",
+        "unableToCopyDesc_theseSteps": "these steps"
     },
     "popovers": {
         "clipSkip": {
@@ -1656,6 +1709,8 @@
         "cropLayerToBbox": "Crop Layer to Bbox",
         "savedToGalleryOk": "Saved to Gallery",
         "savedToGalleryError": "Error saving to gallery",
+        "regionCopiedToClipboard": "{{region}} Copied to Clipboard",
+        "copyRegionError": "Error copying {{region}}",
         "newGlobalReferenceImageOk": "Created Global Reference Image",
         "newGlobalReferenceImageError": "Problem Creating Global Reference Image",
         "newRegionalReferenceImageOk": "Created Regional Reference Image",
@@ -1766,6 +1821,14 @@
         "newControlLayer": "New $t(controlLayers.controlLayer)",
         "newInpaintMask": "New $t(controlLayers.inpaintMask)",
         "newRegionalGuidance": "New $t(controlLayers.regionalGuidance)",
+        "pasteTo": "Paste To",
+        "pasteToAssets": "Assets",
+        "pasteToAssetsDesc": "Paste to Assets",
+        "pasteToBbox": "Bbox",
+        "pasteToBboxDesc": "New Layer (in Bbox)",
+        "pasteToCanvas": "Canvas",
+        "pasteToCanvasDesc": "New Layer (in Canvas)",
+        "pastedTo": "Pasted to {{destination}}",
         "transparency": "Transparency",
         "enableTransparencyEffect": "Enable Transparency Effect",
         "disableTransparencyEffect": "Disable Transparency Effect",
@@ -1932,6 +1995,48 @@
                 "description": "Generates an edge map from the selected layer using the PiDiNet edge detection model.",
                 "scribble": "Scribble",
                 "quantize_edges": "Quantize Edges"
+            },
+            "img_blur": {
+                "label": "Blur Image",
+                "description": "Blurs the selected layer.",
+                "blur_type": "Blur Type",
+                "blur_radius": "Radius",
+                "gaussian_type": "Gaussian",
+                "box_type": "Box"
+            },
+            "img_noise": {
+                "label": "Noise Image",
+                "description": "Adds noise to the selected layer.",
+                "noise_type": "Noise Type",
+                "noise_amount": "Amount",
+                "gaussian_type": "Gaussian",
+                "salt_and_pepper_type": "Salt and Pepper",
+                "noise_color": "Colored Noise",
+                "size": "Noise Size"
+            },
+            "adjust_image": {
+                "label": "Adjust Image",
+                "description": "Adjusts the selected channel of an image.",
+                "channel": "Channel",
+                "value_setting": "Value",
+                "scale_values": "Scale Values",
+                "red": "Red (RGBA)",
+                "green": "Green (RGBA)",
+                "blue": "Blue (RGBA)",
+                "alpha": "Alpha (RGBA)",
+                "cyan": "Cyan (CMYK)",
+                "magenta": "Magenta (CMYK)",
+                "yellow": "Yellow (CMYK)",
+                "black": "Black (CMYK)",
+                "hue": "Hue (HSV)",
+                "saturation": "Saturation (HSV)",
+                "value": "Value (HSV)",
+                "luminosity": "Luminosity (LAB)",
+                "a": "A (LAB)",
+                "b": "B (LAB)",
+                "y": "Y (YCbCr)",
+                "cb": "Cb (YCbCr)",
+                "cr": "Cr (YCbCr)"
             }
         },
         "transform": {
@@ -2005,7 +2110,10 @@
             "newRasterLayer": "New Raster Layer",
             "newInpaintMask": "New Inpaint Mask",
             "newRegionalGuidance": "New Regional Guidance",
-            "cropCanvasToBbox": "Crop Canvas to Bbox"
+            "cropCanvasToBbox": "Crop Canvas to Bbox",
+            "copyToClipboard": "Copy to Clipboard",
+            "copyCanvasToClipboard": "Copy Canvas to Clipboard",
+            "copyBboxToClipboard": "Copy Bbox to Clipboard"
         },
         "stagingArea": {
             "accept": "Accept",
@@ -2139,7 +2247,14 @@
     },
     "whatsNew": {
         "whatsNewInInvoke": "What's New in Invoke",
-        "items": ["Low-VRAM mode", "Dynamic memory management", "Faster model loading times", "Fewer memory errors"],
+        "items": [
+            "Improved VRAM setting defaults",
+            "On-demand model cache clearing",
+            "Expanded FLUX LoRA compatibility",
+            "Canvas Adjust Image filter",
+            "Cancel all but current queue item",
+            "Copy from and paste to Canvas"
+        ],
         "readReleaseNotes": "Read Release Notes",
         "watchRecentReleaseVideos": "Watch Recent Release Videos",
         "watchUiUpdatesOverview": "Watch UI Updates Overview"

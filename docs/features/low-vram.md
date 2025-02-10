@@ -28,11 +28,12 @@ It is possible to fine-tune the settings for best performance or if you still ge
 
 ## Details and fine-tuning
 
-Low-VRAM mode involves 3 features, each of which can be configured or fine-tuned:
+Low-VRAM mode involves 4 features, each of which can be configured or fine-tuned:
 
-- Partial model loading
-- Dynamic RAM and VRAM cache sizes
-- Working memory
+- Partial model loading (`enable_partial_loading`)
+- Dynamic RAM and VRAM cache sizes (`max_cache_ram_gb`, `max_cache_vram_gb`)
+- Working memory (`device_working_mem_gb`)
+- Keeping a RAM weight copy (`keep_ram_copy_of_weights`)
 
 Read on to learn about these features and understand how to fine-tune them for your system and use-cases.
 
@@ -67,12 +68,20 @@ As of v5.6.0, the caches are dynamically sized. The `ram` and `vram` settings ar
 But, if your GPU has enough VRAM to hold models fully, you might get a perf boost by manually setting the cache sizes in `invokeai.yaml`:
 
 ```yaml
-# Set the RAM cache size to as large as possible, leaving a few GB free for the rest of your system and Invoke.
-# For example, if your system has 32GB RAM, 28GB is a good value.
+# The default max cache RAM size is logged on InvokeAI startup. It is determined based on your system RAM / VRAM.
+# You can override the default value by setting `max_cache_ram_gb`.
+# Increasing `max_cache_ram_gb` will increase the amount of RAM used to cache inactive models, resulting in faster model
+# reloads for the cached models.
+# As an example, if your system has 32GB of RAM and no other heavy processes, setting the `max_cache_ram_gb` to 28GB
+# might be a good value to achieve aggressive model caching.
 max_cache_ram_gb: 28
-# Set the VRAM cache size to be as large as possible while leaving enough room for the working memory of the tasks you will be doing.
-# For example, on a 24GB GPU that will be running unquantized FLUX without any auxiliary models,
-# 18GB is a good value.
+# The default max cache VRAM size is adjusted dynamically based on the amount of available VRAM (taking into
+# consideration the VRAM used by other processes).
+# You can override the default value by setting `max_cache_vram_gb`. Note that this value takes precedence over the
+# `device_working_mem_gb`.
+# It is recommended to set the VRAM cache size to be as large as possible while leaving enough room for the working
+# memory of the tasks you will be doing. For example, on a 24GB GPU that will be running unquantized FLUX without any
+# auxiliary models, 18GB might be a good value.
 max_cache_vram_gb: 18
 ```
 
@@ -109,6 +118,15 @@ device_working_mem_gb: 4
 
     Once decoding completes, the model manager "reclaims" the extra VRAM allocated as working memory for future model loading operations.
 
+### Keeping a RAM weight copy
+
+Invoke has the option of keeping a RAM copy of all model weights, even when they are loaded onto the GPU. This optimization is _on_ by default, and enables faster model switching and LoRA patching. Disabling this feature will reduce the average RAM load while running Invoke (peak RAM likely won't change), at the cost of slower model switching and LoRA patching. If you have limited RAM, you can disable this optimization:
+
+```yaml
+# Set to false to reduce the average RAM usage at the cost of slower model switching and LoRA patching.
+keep_ram_copy_of_weights: false
+```
+
 ### Disabling Nvidia sysmem fallback (Windows only)
 
 On Windows, Nvidia GPUs are able to use system RAM when their VRAM fills up via **sysmem fallback**. While it sounds like a good idea on the surface, in practice it causes massive slowdowns during generation.
@@ -127,3 +145,19 @@ It is strongly suggested to disable this feature:
     If the sysmem fallback feature sounds familiar, that's because Invoke's partial model loading strategy is conceptually very similar - use VRAM when there's room, else fall back to RAM.
 
     Unfortunately, the Nvidia implementation is not optimized for applications like Invoke and does more harm than good.
+
+## Troubleshooting
+
+### Windows page file
+
+Invoke has high virtual memory (a.k.a. 'committed memory') requirements. This can cause issues on Windows if the page file size limits are hit. (See this issue for the technical details on why this happens: https://github.com/invoke-ai/InvokeAI/issues/7563).
+
+If you run out of page file space, InvokeAI may crash. Often, these crashes will happen with one of the following errors:
+
+- InvokeAI exits with Windows error code `3221225477`
+- InvokeAI crashes without an error, but `eventvwr.msc` reveals an error with code `0xc0000005` (the hex equivalent of `3221225477`)
+
+If you are running out of page file space, try the following solutions:
+
+- Make sure that you have sufficient disk space for the page file to grow. Watch your disk usage as Invoke runs. If it climbs near 100% leading up to the crash, then this is very likely the source of the issue. Clear out some disk space to resolve the issue.
+- Make sure that your page file is set to "System managed size" (this is the default) rather than a custom size. Under the "System managed size" policy, the page file will grow dynamically as needed. 

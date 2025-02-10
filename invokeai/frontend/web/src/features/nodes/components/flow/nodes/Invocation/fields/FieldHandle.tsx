@@ -36,9 +36,14 @@ const FieldHandle = (props: FieldHandleProps) => {
       borderWidth: !isSingle(type) ? 4 : 0,
       borderStyle: 'solid',
       borderColor: color,
-      borderRadius: isModelType ? 4 : '100%',
+      borderRadius: isModelType || type.batch ? 4 : '100%',
       zIndex: 1,
+      transformOrigin: 'center',
     };
+
+    if (type.batch) {
+      s.transform = 'rotate(45deg) translateX(-0.3rem) translateY(-0.3rem)';
+    }
 
     if (handleType === 'target') {
       s.insetInlineStart = '-1rem';
