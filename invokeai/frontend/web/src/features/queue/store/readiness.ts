@@ -1,5 +1,13 @@
+import { useStore } from '@nanostores/react';
 import { createSelector } from '@reduxjs/toolkit';
+import { EMPTY_ARRAY } from 'app/store/constants';
+import { useAppStore } from 'app/store/nanostores/store';
+import { $true } from 'app/store/nanostores/util';
+import type { AppDispatch, AppStore } from 'app/store/store';
+import { useAppSelector } from 'app/store/storeHooks';
 import type { AppConfig } from 'app/types/invokeai';
+import { useAssertSingleton } from 'common/hooks/useAssertSingleton';
+import { useCanvasManagerSafe } from 'features/controlLayers/contexts/CanvasManagerProviderGate';
 import type { ParamsState } from 'features/controlLayers/store/paramsSlice';
 import { selectParamsSlice } from 'features/controlLayers/store/paramsSlice';
 import { selectCanvasSlice } from 'features/controlLayers/store/selectors';
@@ -14,18 +22,24 @@ import {
 import type { DynamicPromptsState } from 'features/dynamicPrompts/store/dynamicPromptsSlice';
 import { selectDynamicPromptsSlice } from 'features/dynamicPrompts/store/dynamicPromptsSlice';
 import { getShouldProcessPrompt } from 'features/dynamicPrompts/util/getShouldProcessPrompt';
+import { $templates } from 'features/nodes/store/nodesSlice';
 import { selectNodesSlice } from 'features/nodes/store/selectors';
 import type { NodesState, Templates } from 'features/nodes/store/types';
+import { getInvocationNodeErrors } from 'features/nodes/store/util/fieldValidators';
 import type { WorkflowSettingsState } from 'features/nodes/store/workflowSettingsSlice';
 import { selectWorkflowSettingsSlice } from 'features/nodes/store/workflowSettingsSlice';
-import { isImageFieldCollectionInputInstance, isImageFieldCollectionInputTemplate } from 'features/nodes/types/field';
-import { isInvocationNode } from 'features/nodes/types/invocation';
+import { isBatchNode, isExecutableNode, isInvocationNode } from 'features/nodes/types/invocation';
+import { resolveBatchValue } from 'features/nodes/util/node/resolveBatchValue';
 import type { UpscaleState } from 'features/parameters/store/upscaleSlice';
 import { selectUpscaleSlice } from 'features/parameters/store/upscaleSlice';
 import { selectConfigSlice } from 'features/system/store/configSlice';
+import { selectActiveTab } from 'features/ui/store/uiSelectors';
+import type { TabName } from 'features/ui/store/uiTypes';
 import i18n from 'i18next';
-import { forEach, upperFirst } from 'lodash-es';
-import { getConnectedEdges } from 'reactflow';
+import { debounce, groupBy, upperFirst } from 'lodash-es';
+import { atom, computed } from 'nanostores';
+import { useEffect } from 'react';
+import { $isConnected } from 'services/events/stores';
 
 /**
  * This file contains selectors and utilities for determining the app is ready to enqueue generations. The handling
@@ -33,6 +47,9 @@ import { getConnectedEdges } from 'reactflow';
  *
  * For example, the canvas tab needs to check the status of the canvas manager before enqueuing, while the workflows
  * tab needs to check the status of the nodes and their connections.
+ *
+ * A global store that contains the reasons why the app is not ready to enqueue generations. State changes are debounced
+ * to reduce the number of times we run the fairly involved readiness checks.
  */
 
 const LAYER_TYPE_TO_TKEY = {
@@ -45,93 +62,204 @@ const LAYER_TYPE_TO_TKEY = {
 
 export type Reason = { prefix?: string; content: string };
 
+export const $reasonsWhyCannotEnqueue = atom<Reason[]>([]);
+export const $isReadyToEnqueue = computed($reasonsWhyCannotEnqueue, (reasons) => reasons.length === 0);
+
+const debouncedUpdateReasons = debounce(
+  async (
+    tab: TabName,
+    isConnected: boolean,
+    canvas: CanvasState,
+    params: ParamsState,
+    dynamicPrompts: DynamicPromptsState,
+    canvasIsFiltering: boolean,
+    canvasIsTransforming: boolean,
+    canvasIsRasterizing: boolean,
+    canvasIsCompositing: boolean,
+    canvasIsSelectingObject: boolean,
+    nodes: NodesState,
+    workflowSettings: WorkflowSettingsState,
+    templates: Templates,
+    upscale: UpscaleState,
+    config: AppConfig,
+    store: AppStore
+  ) => {
+    if (tab === 'canvas') {
+      const reasons = await getReasonsWhyCannotEnqueueCanvasTab({
+        isConnected,
+        canvas,
+        params,
+        dynamicPrompts,
+        canvasIsFiltering,
+        canvasIsTransforming,
+        canvasIsRasterizing,
+        canvasIsCompositing,
+        canvasIsSelectingObject,
+      });
+      $reasonsWhyCannotEnqueue.set(reasons);
+    } else if (tab === 'workflows') {
+      const reasons = await getReasonsWhyCannotEnqueueWorkflowsTab({
+        dispatch: store.dispatch,
+        nodesState: nodes,
+        workflowSettingsState: workflowSettings,
+        isConnected,
+        templates,
+      });
+      $reasonsWhyCannotEnqueue.set(reasons);
+    } else if (tab === 'upscaling') {
+      const reasons = getReasonsWhyCannotEnqueueUpscaleTab({
+        isConnected,
+        upscale,
+        config,
+        params,
+      });
+      $reasonsWhyCannotEnqueue.set(reasons);
+    } else {
+      $reasonsWhyCannotEnqueue.set(EMPTY_ARRAY);
+    }
+  },
+  300
+);
+
+export const useReadinessWatcher = () => {
+  useAssertSingleton('useReadinessWatcher');
+  const store = useAppStore();
+  const canvasManager = useCanvasManagerSafe();
+  const tab = useAppSelector(selectActiveTab);
+  const canvas = useAppSelector(selectCanvasSlice);
+  const params = useAppSelector(selectParamsSlice);
+  const dynamicPrompts = useAppSelector(selectDynamicPromptsSlice);
+  const nodes = useAppSelector(selectNodesSlice);
+  const workflowSettings = useAppSelector(selectWorkflowSettingsSlice);
+  const upscale = useAppSelector(selectUpscaleSlice);
+  const config = useAppSelector(selectConfigSlice);
+  const templates = useStore($templates);
+  const isConnected = useStore($isConnected);
+  const canvasIsFiltering = useStore(canvasManager?.stateApi.$isFiltering ?? $true);
+  const canvasIsTransforming = useStore(canvasManager?.stateApi.$isTransforming ?? $true);
+  const canvasIsRasterizing = useStore(canvasManager?.stateApi.$isRasterizing ?? $true);
+  const canvasIsSelectingObject = useStore(canvasManager?.stateApi.$isSegmenting ?? $true);
+  const canvasIsCompositing = useStore(canvasManager?.compositor.$isBusy ?? $true);
+
+  useEffect(() => {
+    debouncedUpdateReasons(
+      tab,
+      isConnected,
+      canvas,
+      params,
+      dynamicPrompts,
+      canvasIsFiltering,
+      canvasIsTransforming,
+      canvasIsRasterizing,
+      canvasIsCompositing,
+      canvasIsSelectingObject,
+      nodes,
+      workflowSettings,
+      templates,
+      upscale,
+      config,
+      store
+    );
+  }, [
+    store,
+    canvas,
+    canvasIsCompositing,
+    canvasIsFiltering,
+    canvasIsRasterizing,
+    canvasIsSelectingObject,
+    canvasIsTransforming,
+    config,
+    dynamicPrompts,
+    isConnected,
+    nodes,
+    params,
+    tab,
+    templates,
+    upscale,
+    workflowSettings,
+  ]);
+};
+
 const disconnectedReason = (t: typeof i18n.t) => ({ content: t('parameters.invoke.systemDisconnected') });
 
-const getReasonsWhyCannotEnqueueWorkflowsTab = (arg: {
+const getReasonsWhyCannotEnqueueWorkflowsTab = async (arg: {
+  dispatch: AppDispatch;
+  nodesState: NodesState;
+  workflowSettingsState: WorkflowSettingsState;
   isConnected: boolean;
-  nodes: NodesState;
-  workflowSettings: WorkflowSettingsState;
   templates: Templates;
-}): Reason[] => {
-  const { isConnected, nodes, workflowSettings, templates } = arg;
+}): Promise<Reason[]> => {
+  const { dispatch, nodesState, workflowSettingsState, isConnected, templates } = arg;
   const reasons: Reason[] = [];
 
   if (!isConnected) {
     reasons.push(disconnectedReason(i18n.t));
   }
 
-  if (workflowSettings.shouldValidateGraph) {
-    if (!nodes.nodes.length) {
+  if (workflowSettingsState.shouldValidateGraph) {
+    const { nodes, edges } = nodesState;
+    const invocationNodes = nodes.filter(isInvocationNode);
+    const batchNodes = invocationNodes.filter(isBatchNode);
+    const executableNodes = invocationNodes.filter(isExecutableNode);
+
+    if (!executableNodes.length) {
       reasons.push({ content: i18n.t('parameters.invoke.noNodesInGraph') });
     }
 
-    nodes.nodes.forEach((node) => {
+    for (const node of batchNodes) {
+      if (edges.find((e) => e.source === node.id) === undefined) {
+        reasons.push({ content: i18n.t('parameters.invoke.batchNodeNotConnected', { label: node.data.label }) });
+      }
+    }
+
+    if (batchNodes.length > 0) {
+      const batchSizes: number[] = [];
+      const groupedBatchNodes = groupBy(batchNodes, (node) => node.data.inputs['batch_group_id']?.value);
+      for (const [batchGroupId, batchNodes] of Object.entries(groupedBatchNodes)) {
+        // But grouped batch nodes must have the same collection size
+        const groupBatchSizes: number[] = [];
+
+        for (const node of batchNodes) {
+          const size = (await resolveBatchValue({ dispatch, nodesState, node })).length;
+          if (batchGroupId === 'None') {
+            // Ungrouped batch nodes may have differing collection sizes
+            batchSizes.push(size);
+          } else {
+            groupBatchSizes.push(size);
+          }
+        }
+
+        if (groupBatchSizes.some((count) => count !== groupBatchSizes[0])) {
+          reasons.push({
+            content: i18n.t('parameters.invoke.batchNodeCollectionSizeMismatch', { batchGroupId }),
+          });
+        }
+
+        if (groupBatchSizes[0] !== undefined) {
+          batchSizes.push(groupBatchSizes[0]);
+        }
+      }
+
+      if (batchSizes.some((size) => size === 0)) {
+        reasons.push({ content: i18n.t('parameters.invoke.batchNodeEmptyCollection') });
+      }
+    }
+
+    invocationNodes.forEach((node) => {
       if (!isInvocationNode(node)) {
         return;
       }
 
-      const nodeTemplate = templates[node.data.type];
+      const errors = getInvocationNodeErrors(node.data.id, templates, nodesState);
 
-      if (!nodeTemplate) {
-        // Node type not found
-        reasons.push({ content: i18n.t('parameters.invoke.missingNodeTemplate') });
-        return;
+      for (const error of errors) {
+        if (error.type === 'node-error') {
+          reasons.push({ content: error.issue });
+        } else {
+          // error.type === 'field-error'
+          reasons.push({ prefix: error.prefix, content: error.issue });
+        }
       }
-
-      const connectedEdges = getConnectedEdges([node], nodes.edges);
-
-      forEach(node.data.inputs, (field) => {
-        const fieldTemplate = nodeTemplate.inputs[field.name];
-        const hasConnection = connectedEdges.some(
-          (edge) => edge.target === node.id && edge.targetHandle === field.name
-        );
-
-        if (!fieldTemplate) {
-          reasons.push({ content: i18n.t('parameters.invoke.missingFieldTemplate') });
-          return;
-        }
-
-        const baseTKeyOptions = {
-          nodeLabel: node.data.label || nodeTemplate.title,
-          fieldLabel: field.label || fieldTemplate.title,
-        };
-
-        if (fieldTemplate.required && field.value === undefined && !hasConnection) {
-          reasons.push({ content: i18n.t('parameters.invoke.missingInputForField', baseTKeyOptions) });
-          return;
-        } else if (
-          field.value &&
-          isImageFieldCollectionInputInstance(field) &&
-          isImageFieldCollectionInputTemplate(fieldTemplate)
-        ) {
-          // Image collections may have min or max items to validate
-          // TODO(psyche): generalize this to other collection types
-          if (fieldTemplate.minItems !== undefined && fieldTemplate.minItems > 0 && field.value.length === 0) {
-            reasons.push({ content: i18n.t('parameters.invoke.collectionEmpty', baseTKeyOptions) });
-            return;
-          }
-          if (fieldTemplate.minItems !== undefined && field.value.length < fieldTemplate.minItems) {
-            reasons.push({
-              content: i18n.t('parameters.invoke.collectionTooFewItems', {
-                ...baseTKeyOptions,
-                size: field.value.length,
-                minItems: fieldTemplate.minItems,
-              }),
-            });
-            return;
-          }
-          if (fieldTemplate.maxItems !== undefined && field.value.length > fieldTemplate.maxItems) {
-            reasons.push({
-              content: i18n.t('parameters.invoke.collectionTooManyItems', {
-                ...baseTKeyOptions,
-                size: field.value.length,
-                maxItems: fieldTemplate.maxItems,
-              }),
-            });
-            return;
-          }
-        }
-      });
     });
   }
 
@@ -365,143 +493,8 @@ const getReasonsWhyCannotEnqueueCanvasTab = (arg: {
   return reasons;
 };
 
-export const buildSelectReasonsWhyCannotEnqueueCanvasTab = (arg: {
-  isConnected: boolean;
-  canvasIsFiltering: boolean;
-  canvasIsTransforming: boolean;
-  canvasIsRasterizing: boolean;
-  canvasIsCompositing: boolean;
-  canvasIsSelectingObject: boolean;
-}) => {
-  const {
-    isConnected,
-    canvasIsFiltering,
-    canvasIsTransforming,
-    canvasIsRasterizing,
-    canvasIsCompositing,
-    canvasIsSelectingObject,
-  } = arg;
-
-  return createSelector(
-    selectCanvasSlice,
-    selectParamsSlice,
-    selectDynamicPromptsSlice,
-    (canvas, params, dynamicPrompts) =>
-      getReasonsWhyCannotEnqueueCanvasTab({
-        isConnected,
-        canvas,
-        params,
-        dynamicPrompts,
-        canvasIsFiltering,
-        canvasIsTransforming,
-        canvasIsRasterizing,
-        canvasIsCompositing,
-        canvasIsSelectingObject,
-      })
-  );
-};
-
-export const buildSelectIsReadyToEnqueueCanvasTab = (arg: {
-  isConnected: boolean;
-  canvasIsFiltering: boolean;
-  canvasIsTransforming: boolean;
-  canvasIsRasterizing: boolean;
-  canvasIsCompositing: boolean;
-  canvasIsSelectingObject: boolean;
-}) => {
-  const {
-    isConnected,
-    canvasIsFiltering,
-    canvasIsTransforming,
-    canvasIsRasterizing,
-    canvasIsCompositing,
-    canvasIsSelectingObject,
-  } = arg;
-
-  return createSelector(
-    selectCanvasSlice,
-    selectParamsSlice,
-    selectDynamicPromptsSlice,
-    (canvas, params, dynamicPrompts) =>
-      getReasonsWhyCannotEnqueueCanvasTab({
-        isConnected,
-        canvas,
-        params,
-        dynamicPrompts,
-        canvasIsFiltering,
-        canvasIsTransforming,
-        canvasIsRasterizing,
-        canvasIsCompositing,
-        canvasIsSelectingObject,
-      }).length === 0
-  );
-};
-
-export const buildSelectReasonsWhyCannotEnqueueUpscaleTab = (arg: { isConnected: boolean }) => {
-  const { isConnected } = arg;
-  return createSelector(selectUpscaleSlice, selectConfigSlice, selectParamsSlice, (upscale, config, params) =>
-    getReasonsWhyCannotEnqueueUpscaleTab({ isConnected, upscale, config, params })
-  );
-};
-
-export const buildSelectIsReadyToEnqueueUpscaleTab = (arg: { isConnected: boolean }) => {
-  const { isConnected } = arg;
-
-  return createSelector(
-    selectUpscaleSlice,
-    selectConfigSlice,
-    selectParamsSlice,
-    (upscale, config, params) =>
-      getReasonsWhyCannotEnqueueUpscaleTab({ isConnected, upscale, config, params }).length === 0
-  );
-};
-
-export const buildSelectReasonsWhyCannotEnqueueWorkflowsTab = (arg: { isConnected: boolean; templates: Templates }) => {
-  const { isConnected, templates } = arg;
-
-  return createSelector(selectNodesSlice, selectWorkflowSettingsSlice, (nodes, workflowSettings) =>
-    getReasonsWhyCannotEnqueueWorkflowsTab({
-      isConnected,
-      nodes,
-      workflowSettings,
-      templates,
-    })
-  );
-};
-
-export const buildSelectIsReadyToEnqueueWorkflowsTab = (arg: { isConnected: boolean; templates: Templates }) => {
-  const { isConnected, templates } = arg;
-
-  return createSelector(
-    selectNodesSlice,
-    selectWorkflowSettingsSlice,
-    (nodes, workflowSettings) =>
-      getReasonsWhyCannotEnqueueWorkflowsTab({
-        isConnected,
-        nodes,
-        workflowSettings,
-        templates,
-      }).length === 0
-  );
-};
-
 export const selectPromptsCount = createSelector(
   selectParamsSlice,
   selectDynamicPromptsSlice,
   (params, dynamicPrompts) => (getShouldProcessPrompt(params.positivePrompt) ? dynamicPrompts.prompts.length : 1)
-);
-
-export const selectWorkflowsBatchSize = createSelector(selectNodesSlice, ({ nodes }) =>
-  // The batch size is the product of all batch nodes' collection sizes
-  nodes.filter(isInvocationNode).reduce((batchSize, node) => {
-    if (!isImageFieldCollectionInputInstance(node.data.inputs.images)) {
-      return batchSize;
-    }
-    // If the batch size is not set, default to 1
-    batchSize = batchSize || 1;
-    // Multiply the batch size by the number of images in the batch
-    batchSize = batchSize * (node.data.inputs.images.value?.length ?? 0);
-
-    return batchSize;
-  }, 0)
 );

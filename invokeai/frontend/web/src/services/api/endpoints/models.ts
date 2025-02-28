@@ -4,6 +4,7 @@ import { getSelectorsOptions } from 'app/store/createMemoizedSelector';
 import queryString from 'query-string';
 import type { operations, paths } from 'services/api/schema';
 import type { AnyModelConfig, GetHFTokenStatusResponse, SetHFTokenArg, SetHFTokenResponse } from 'services/api/types';
+import type { Param0 } from 'tsafe';
 
 import type { ApiTagDescription } from '..';
 import { api, buildV2Url, LIST_TAG } from '..';
@@ -247,11 +248,21 @@ export const modelsApi = api.injectEndpoints({
       },
       onQueryStarted: (_, { dispatch, queryFulfilled }) => {
         queryFulfilled.then(({ data }) => {
-          modelConfigsAdapterSelectors.selectAll(data).forEach((modelConfig) => {
-            dispatch(modelsApi.util.upsertQueryData('getModelConfig', modelConfig.key, modelConfig));
+          const updates: Param0<typeof modelsApi.util.upsertQueryEntries> = [];
+          for (const modelConfig of modelConfigsAdapterSelectors.selectAll(data)) {
+            updates.push({
+              endpointName: 'getModelConfig',
+              arg: modelConfig.key,
+              value: modelConfig,
+            });
             const { base, name, type } = modelConfig;
-            dispatch(modelsApi.util.upsertQueryData('getModelConfigByAttrs', { base, name, type }, modelConfig));
-          });
+            updates.push({
+              endpointName: 'getModelConfigByAttrs',
+              arg: { base, name, type },
+              value: modelConfig,
+            });
+          }
+          dispatch(modelsApi.util.upsertQueryEntries(updates));
         });
       },
     }),
@@ -275,6 +286,9 @@ export const modelsApi = api.injectEndpoints({
         }
       },
     }),
+    emptyModelCache: build.mutation<void, void>({
+      query: () => ({ url: buildModelsUrl('empty_model_cache'), method: 'POST' }),
+    }),
   }),
 });
 
@@ -295,6 +309,7 @@ export const {
   useGetStarterModelsQuery,
   useGetHFTokenStatusQuery,
   useSetHFTokenMutation,
+  useEmptyModelCacheMutation,
 } = modelsApi;
 
 export const selectModelConfigsQuery = modelsApi.endpoints.getModelConfigs.select();

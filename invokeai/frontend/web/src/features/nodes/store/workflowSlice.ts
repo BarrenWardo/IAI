@@ -1,45 +1,88 @@
 import type { PayloadAction, Selector } from '@reduxjs/toolkit';
 import { createSelector, createSlice } from '@reduxjs/toolkit';
 import type { PersistConfig, RootState } from 'app/store/store';
+import { useAppSelector } from 'app/store/storeHooks';
 import { deepClone } from 'common/util/deepClone';
+import {
+  addElement,
+  getElement,
+  removeElement,
+  reparentElement,
+} from 'features/nodes/components/sidePanel/builder/form-manipulation';
 import { workflowLoaded } from 'features/nodes/store/actions';
 import { isAnyNodeOrEdgeMutation, nodeEditorReset, nodesChanged } from 'features/nodes/store/nodesSlice';
-import type {
-  FieldIdentifierWithValue,
-  WorkflowMode,
-  WorkflowsState as WorkflowState,
-} from 'features/nodes/store/types';
-import type { FieldIdentifier } from 'features/nodes/types/field';
+import type { NodesState, WorkflowMode, WorkflowsState as WorkflowState } from 'features/nodes/store/types';
+import type { FieldIdentifier, StatefulFieldValue } from 'features/nodes/types/field';
 import { isInvocationNode } from 'features/nodes/types/invocation';
-import type { WorkflowCategory, WorkflowV3 } from 'features/nodes/types/workflow';
-import { isEqual, omit, uniqBy } from 'lodash-es';
+import type {
+  BuilderForm,
+  ContainerElement,
+  ElementId,
+  FormElement,
+  HeadingElement,
+  NodeFieldElement,
+  TextElement,
+  WorkflowCategory,
+  WorkflowV3,
+} from 'features/nodes/types/workflow';
+import {
+  buildContainer,
+  getDefaultForm,
+  isContainerElement,
+  isHeadingElement,
+  isNodeFieldElement,
+  isTextElement,
+} from 'features/nodes/types/workflow';
+import { isEqual } from 'lodash-es';
+import { useMemo } from 'react';
 import type { SQLiteDirection, WorkflowRecordOrderBy } from 'services/api/types';
 
 import { selectNodesSlice } from './selectors';
 
-const blankWorkflow: Omit<WorkflowV3, 'nodes' | 'edges'> = {
-  name: '',
-  author: '',
-  description: '',
-  version: '',
-  contact: '',
-  tags: '',
-  notes: '',
-  exposedFields: [],
-  meta: { version: '3.0.0', category: 'user' },
-  id: undefined,
+type FormElementDataChangedAction<T extends FormElement> = PayloadAction<{
+  id: string;
+  changes: Partial<T['data']>;
+}>;
+
+const formElementDataChangedReducer = <T extends FormElement>(
+  state: WorkflowState,
+  action: FormElementDataChangedAction<T>,
+  guard: (element: FormElement) => element is T
+) => {
+  const { id, changes } = action.payload;
+  const element = state.form?.elements[id];
+  if (!element || !guard(element)) {
+    return;
+  }
+  element.data = { ...element.data, ...changes } as T['data'];
+};
+
+const getBlankWorkflow = (): Omit<WorkflowV3, 'nodes' | 'edges'> => {
+  return {
+    name: '',
+    author: '',
+    description: '',
+    version: '',
+    contact: '',
+    tags: '',
+    notes: '',
+    exposedFields: [],
+    meta: { version: '3.0.0', category: 'user' },
+    id: undefined,
+    form: getDefaultForm(),
+  };
 };
 
 const initialWorkflowState: WorkflowState = {
   _version: 1,
   isTouched: false,
   mode: 'view',
-  originalExposedFieldValues: [],
+  formFieldInitialValues: {},
   searchTerm: '',
   orderBy: undefined, // initial value is decided in component
   orderDirection: 'DESC',
   categorySections: {},
-  ...blankWorkflow,
+  ...getBlankWorkflow(),
 };
 
 export const workflowSlice = createSlice({
@@ -61,28 +104,6 @@ export const workflowSlice = createSlice({
     categorySectionsChanged: (state, action: PayloadAction<{ id: string; isOpen: boolean }>) => {
       const { id, isOpen } = action.payload;
       state.categorySections[id] = isOpen;
-    },
-    workflowExposedFieldAdded: (state, action: PayloadAction<FieldIdentifierWithValue>) => {
-      state.exposedFields = uniqBy(
-        state.exposedFields.concat(omit(action.payload, 'value')),
-        (field) => `${field.nodeId}-${field.fieldName}`
-      );
-      state.originalExposedFieldValues = uniqBy(
-        state.originalExposedFieldValues.concat(action.payload),
-        (field) => `${field.nodeId}-${field.fieldName}`
-      );
-      state.isTouched = true;
-    },
-    workflowExposedFieldRemoved: (state, action: PayloadAction<FieldIdentifier>) => {
-      state.exposedFields = state.exposedFields.filter((field) => !isEqual(field, action.payload));
-      state.originalExposedFieldValues = state.originalExposedFieldValues.filter(
-        (field) => !isEqual(omit(field, 'value'), action.payload)
-      );
-      state.isTouched = true;
-    },
-    workflowExposedFieldsReordered: (state, action: PayloadAction<FieldIdentifier[]>) => {
-      state.exposedFields = action.payload;
-      state.isTouched = true;
     },
     workflowNameChanged: (state, action: PayloadAction<string>) => {
       state.name = action.payload;
@@ -123,38 +144,70 @@ export const workflowSlice = createSlice({
     workflowSaved: (state) => {
       state.isTouched = false;
     },
+    formReset: (state) => {
+      const rootElement = buildContainer('column', []);
+      state.form = {
+        elements: { [rootElement.id]: rootElement },
+        rootElementId: rootElement.id,
+      };
+    },
+    formElementAdded: (
+      state,
+      action: PayloadAction<{
+        element: FormElement;
+        parentId: ElementId;
+        index?: number;
+        initialValue?: StatefulFieldValue;
+      }>
+    ) => {
+      const { form } = state;
+      const { element, parentId, index, initialValue } = action.payload;
+      addElement({ form, element, parentId, index });
+      if (isNodeFieldElement(element)) {
+        state.formFieldInitialValues[element.id] = initialValue;
+      }
+    },
+    formElementRemoved: (state, action: PayloadAction<{ id: string }>) => {
+      const { form } = state;
+      const { id } = action.payload;
+      removeElement({ form, id });
+      delete state.formFieldInitialValues[id];
+    },
+    formElementReparented: (state, action: PayloadAction<{ id: string; newParentId: string; index: number }>) => {
+      const { form } = state;
+      const { id, newParentId, index } = action.payload;
+      reparentElement({ form, id, newParentId, index });
+    },
+    formElementHeadingDataChanged: (state, action: FormElementDataChangedAction<HeadingElement>) => {
+      formElementDataChangedReducer(state, action, isHeadingElement);
+    },
+    formElementTextDataChanged: (state, action: FormElementDataChangedAction<TextElement>) => {
+      formElementDataChangedReducer(state, action, isTextElement);
+    },
+    formElementNodeFieldDataChanged: (state, action: FormElementDataChangedAction<NodeFieldElement>) => {
+      formElementDataChangedReducer(state, action, isNodeFieldElement);
+    },
+    formElementContainerDataChanged: (state, action: FormElementDataChangedAction<ContainerElement>) => {
+      formElementDataChangedReducer(state, action, isContainerElement);
+    },
+    formFieldInitialValuesChanged: (
+      state,
+      action: PayloadAction<{ formFieldInitialValues: WorkflowState['formFieldInitialValues'] }>
+    ) => {
+      const { formFieldInitialValues } = action.payload;
+      state.formFieldInitialValues = formFieldInitialValues;
+    },
   },
   extraReducers: (builder) => {
-    builder.addCase(workflowLoaded, (state, action) => {
+    builder.addCase(workflowLoaded, (state, action): WorkflowState => {
       const { nodes, edges: _edges, ...workflowExtra } = action.payload;
 
-      const originalExposedFieldValues: FieldIdentifierWithValue[] = [];
-
-      workflowExtra.exposedFields.forEach((field) => {
-        const node = nodes.find((n) => n.id === field.nodeId);
-
-        if (!isInvocationNode(node)) {
-          return;
-        }
-
-        const input = node.data.inputs[field.fieldName];
-
-        if (!input) {
-          return;
-        }
-
-        const originalExposedFieldValue = {
-          nodeId: field.nodeId,
-          fieldName: field.fieldName,
-          value: input.value,
-        };
-        originalExposedFieldValues.push(originalExposedFieldValue);
-      });
+      const formFieldInitialValues = getFormFieldInitialValues(workflowExtra.form, nodes);
 
       return {
         ...deepClone(initialWorkflowState),
         ...deepClone(workflowExtra),
-        originalExposedFieldValues,
+        formFieldInitialValues,
         mode: state.mode,
       };
     });
@@ -172,7 +225,8 @@ export const workflowSlice = createSlice({
       // updated nodes. In this case, we should not remove the exposed fields. To handle this, we find the last remove
       // and add changes for each exposed field. If the remove change comes after the add change, we remove the exposed
       // field.
-      const exposedFieldsToRemove: FieldIdentifier[] = [];
+      const fieldsToRemove: FieldIdentifier[] = [];
+
       state.exposedFields.forEach((field) => {
         const removeIndex = action.payload.findLastIndex(
           (change) => change.type === 'remove' && change.id === field.nodeId
@@ -181,13 +235,26 @@ export const workflowSlice = createSlice({
           (change) => change.type === 'add' && change.item.id === field.nodeId
         );
         if (removeIndex > addIndex) {
-          exposedFieldsToRemove.push({ nodeId: field.nodeId, fieldName: field.fieldName });
+          fieldsToRemove.push({ nodeId: field.nodeId, fieldName: field.fieldName });
         }
       });
+      state.exposedFields = state.exposedFields.filter((field) => !fieldsToRemove.some((f) => isEqual(f, field)));
 
-      state.exposedFields = state.exposedFields.filter(
-        (field) => !exposedFieldsToRemove.some((f) => isEqual(f, field))
-      );
+      if (state.form) {
+        for (const el of Object.values(state.form?.elements || {})) {
+          if (!isNodeFieldElement(el)) {
+            continue;
+          }
+          const { nodeId } = el.data.fieldIdentifier;
+          const removeIndex = action.payload.findLastIndex(
+            (change) => change.type === 'remove' && change.id === nodeId
+          );
+          const addIndex = action.payload.findLastIndex((change) => change.type === 'add' && change.item.id === nodeId);
+          if (removeIndex > addIndex) {
+            removeElement({ form: state.form, id: el.id });
+          }
+        }
+      }
 
       // Not all changes to nodes should result in the workflow being marked touched
       const filteredChanges = action.payload.filter((change) => {
@@ -206,7 +273,7 @@ export const workflowSlice = createSlice({
         return false;
       });
 
-      if (filteredChanges.length > 0 || exposedFieldsToRemove.length > 0) {
+      if (filteredChanges.length > 0 || fieldsToRemove.length > 0) {
         state.isTouched = true;
       }
     });
@@ -219,9 +286,6 @@ export const workflowSlice = createSlice({
 
 export const {
   workflowModeChanged,
-  workflowExposedFieldAdded,
-  workflowExposedFieldRemoved,
-  workflowExposedFieldsReordered,
   workflowNameChanged,
   workflowCategoryChanged,
   workflowDescriptionChanged,
@@ -236,6 +300,15 @@ export const {
   workflowOrderByChanged,
   workflowOrderDirectionChanged,
   categorySectionsChanged,
+  formReset,
+  formElementAdded,
+  formElementRemoved,
+  formElementReparented,
+  formElementHeadingDataChanged,
+  formElementTextDataChanged,
+  formElementNodeFieldDataChanged,
+  formElementContainerDataChanged,
+  formFieldInitialValuesChanged,
 } = workflowSlice.actions;
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -257,6 +330,34 @@ export const selectWorkflowSlice = (state: RootState) => state.workflow;
 const createWorkflowSelector = <T>(selector: Selector<WorkflowState, T>) =>
   createSelector(selectWorkflowSlice, selector);
 
+// The form builder's initial values are based on the current values of the node fields in the workflow.
+export const getFormFieldInitialValues = (form: BuilderForm, nodes: NodesState['nodes']) => {
+  const formFieldInitialValues: Record<string, StatefulFieldValue> = {};
+
+  for (const el of Object.values(form.elements)) {
+    if (!isNodeFieldElement(el)) {
+      continue;
+    }
+    const { nodeId, fieldName } = el.data.fieldIdentifier;
+
+    const node = nodes.find((n) => n.id === nodeId);
+
+    if (!isInvocationNode(node)) {
+      continue;
+    }
+
+    const field = node.data.inputs[fieldName];
+
+    if (!field) {
+      continue;
+    }
+
+    formFieldInitialValues[el.id] = field.value;
+  }
+
+  return formFieldInitialValues;
+};
+
 export const selectWorkflowName = createWorkflowSelector((workflow) => workflow.name);
 export const selectWorkflowId = createWorkflowSelector((workflow) => workflow.id);
 export const selectWorkflowMode = createWorkflowSelector((workflow) => workflow.mode);
@@ -265,6 +366,7 @@ export const selectWorkflowSearchTerm = createWorkflowSelector((workflow) => wor
 export const selectWorkflowOrderBy = createWorkflowSelector((workflow) => workflow.orderBy);
 export const selectWorkflowOrderDirection = createWorkflowSelector((workflow) => workflow.orderDirection);
 export const selectWorkflowDescription = createWorkflowSelector((workflow) => workflow.description);
+export const selectWorkflowForm = createWorkflowSelector((workflow) => workflow.form);
 
 export const selectCleanEditor = createSelector([selectNodesSlice, selectWorkflowSlice], (nodes, workflow) => {
   const noNodes = !nodes.nodes.length;
@@ -272,3 +374,27 @@ export const selectCleanEditor = createSelector([selectNodesSlice, selectWorkflo
   const savedWorkflow = !!workflow.id;
   return noNodes && !isTouched && !savedWorkflow;
 });
+
+export const selectFormRootElementId = createWorkflowSelector((workflow) => {
+  return workflow.form.rootElementId;
+});
+export const selectFormRootElement = createWorkflowSelector((workflow) => {
+  return getElement(workflow.form, workflow.form.rootElementId, isContainerElement);
+});
+export const selectIsFormEmpty = createWorkflowSelector((workflow) => {
+  const rootElement = workflow.form.elements[workflow.form.rootElementId];
+  if (!rootElement || !isContainerElement(rootElement)) {
+    return true;
+  }
+  return rootElement.data.children.length === 0;
+});
+export const selectFormInitialValues = createWorkflowSelector((workflow) => workflow.formFieldInitialValues);
+export const selectNodeFieldElements = createWorkflowSelector((workflow) =>
+  Object.values(workflow.form.elements).filter(isNodeFieldElement)
+);
+const buildSelectElement = (id: string) => createWorkflowSelector((workflow) => workflow.form?.elements[id]);
+export const useElement = (id: string): FormElement | undefined => {
+  const selector = useMemo(() => buildSelectElement(id), [id]);
+  const element = useAppSelector(selector);
+  return element;
+};

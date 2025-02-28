@@ -23,9 +23,11 @@ export type AppFeature =
   | 'pauseQueue'
   | 'resumeQueue'
   | 'invocationCache'
+  | 'modelCache'
   | 'bulkDownload'
   | 'starterModels'
-  | 'hfToken';
+  | 'hfToken'
+  | 'retryQueueItem';
 /**
  * A disable-able Stable Diffusion feature
  */

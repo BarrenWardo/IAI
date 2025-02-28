@@ -1,3 +1,4 @@
+import { logger } from 'app/logging/logger';
 import type { AppDispatch, RootState } from 'app/store/store';
 import { getPrefixedId } from 'features/controlLayers/konva/util';
 import type {
@@ -9,7 +10,6 @@ import { selectComparisonImages } from 'features/gallery/components/ImageViewer/
 import type { BoardId } from 'features/gallery/store/types';
 import {
   addImagesToBoard,
-  addImagesToNodeImageFieldCollectionAction,
   createNewCanvasEntityFromImage,
   removeImagesFromBoard,
   replaceCanvasEntityObjectsWithImage,
@@ -19,9 +19,13 @@ import {
   setRegionalGuidanceReferenceImage,
   setUpscaleInitialImage,
 } from 'features/imageActions/actions';
-import type { FieldIdentifier } from 'features/nodes/types/field';
+import { fieldImageCollectionValueChanged } from 'features/nodes/store/nodesSlice';
+import { selectFieldInputInstanceSafe, selectNodesSlice } from 'features/nodes/store/selectors';
+import { type FieldIdentifier, isImageFieldCollectionInputInstance } from 'features/nodes/types/field';
 import type { ImageDTO } from 'services/api/types';
 import type { JsonObject } from 'type-fest';
+
+const log = logger('dnd');
 
 type RecordUnknown = Record<string | symbol, unknown>;
 
@@ -102,18 +106,6 @@ export const singleCanvasEntityDndSource: DndSource<SingleCanvasEntityDndSourceD
   ..._singleCanvasEntity,
   typeGuard: buildTypeGuard(_singleCanvasEntity.key),
   getData: buildGetData(_singleCanvasEntity.key, _singleCanvasEntity.type),
-};
-
-const _singleWorkflowField = buildTypeAndKey('single-workflow-field');
-type SingleWorkflowFieldDndSourceData = DndData<
-  typeof _singleWorkflowField.type,
-  typeof _singleWorkflowField.key,
-  { fieldIdentifier: FieldIdentifier }
->;
-export const singleWorkflowFieldDndSource: DndSource<SingleWorkflowFieldDndSourceData> = {
-  ..._singleWorkflowField,
-  typeGuard: buildTypeGuard(_singleWorkflowField.key),
-  getData: buildGetData(_singleWorkflowField.key, _singleWorkflowField.type),
 };
 
 type DndTarget<TargetData extends DndData, SourceData extends DndData> = {
@@ -268,15 +260,27 @@ export const addImagesToNodeImageFieldCollectionDndTarget: DndTarget<
     }
 
     const { fieldIdentifier } = targetData.payload;
-    const imageDTOs: ImageDTO[] = [];
 
-    if (singleImageDndSource.typeGuard(sourceData)) {
-      imageDTOs.push(sourceData.payload.imageDTO);
-    } else {
-      imageDTOs.push(...sourceData.payload.imageDTOs);
+    const fieldInputInstance = selectFieldInputInstanceSafe(
+      selectNodesSlice(getState()),
+      fieldIdentifier.nodeId,
+      fieldIdentifier.fieldName
+    );
+
+    if (!isImageFieldCollectionInputInstance(fieldInputInstance)) {
+      log.warn({ fieldIdentifier }, 'Attempted to add images to a non-image field collection');
+      return;
     }
 
-    addImagesToNodeImageFieldCollectionAction({ fieldIdentifier, imageDTOs, dispatch, getState });
+    const newValue = fieldInputInstance.value ? [...fieldInputInstance.value] : [];
+
+    if (singleImageDndSource.typeGuard(sourceData)) {
+      newValue.push({ image_name: sourceData.payload.imageDTO.image_name });
+    } else {
+      newValue.push(...sourceData.payload.imageDTOs.map(({ image_name }) => ({ image_name })));
+    }
+
+    dispatch(fieldImageCollectionValueChanged({ ...fieldIdentifier, value: newValue }));
   },
 };
 //#endregion

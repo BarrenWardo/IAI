@@ -1,6 +1,6 @@
 import { logger } from 'app/logging/logger';
 import type { AppStartListening } from 'app/store/middleware/listenerMiddleware';
-import { $nodeExecutionStates } from 'features/nodes/hooks/useExecutionState';
+import { $nodeExecutionStates } from 'features/nodes/hooks/useNodeExecutionState';
 import { workflowLoaded, workflowLoadRequested } from 'features/nodes/store/actions';
 import { $templates } from 'features/nodes/store/nodesSlice';
 import { $needsFit } from 'features/nodes/store/reactFlowInstance';
@@ -22,12 +22,18 @@ const getWorkflow = async (data: GraphAndWorkflowResponse, templates: Templates)
   if (data.workflow) {
     // Prefer to load the workflow if it's available - it has more information
     const parsed = JSON.parse(data.workflow);
-    return await validateWorkflow(parsed, templates, checkImageAccess, checkBoardAccess, checkModelAccess);
+    return await validateWorkflow({
+      workflow: parsed,
+      templates,
+      checkImageAccess,
+      checkBoardAccess,
+      checkModelAccess,
+    });
   } else if (data.graph) {
     // Else we fall back on the graph, using the graphToWorkflow function to convert and do layout
     const parsed = JSON.parse(data.graph);
     const workflow = graphToWorkflow(parsed as NonNullableGraph, true);
-    return await validateWorkflow(workflow, templates, checkImageAccess, checkBoardAccess, checkModelAccess);
+    return await validateWorkflow({ workflow, templates, checkImageAccess, checkBoardAccess, checkModelAccess });
   } else {
     throw new Error('No workflow or graph provided');
   }

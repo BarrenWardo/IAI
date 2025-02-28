@@ -1,9 +1,9 @@
 import type { SystemStyleObject } from '@invoke-ai/ui-library';
 import { chakra, Flex } from '@invoke-ai/ui-library';
+import { MiniMap } from '@xyflow/react';
 import { useAppSelector } from 'app/store/storeHooks';
 import { selectShouldShowMinimapPanel } from 'features/nodes/store/workflowSettingsSlice';
 import { memo } from 'react';
-import { MiniMap } from 'reactflow';
 
 const ChakraMiniMap = chakra(MiniMap);
 
@@ -20,7 +20,7 @@ const MinimapPanel = () => {
   const shouldShowMinimapPanel = useAppSelector(selectShouldShowMinimapPanel);
 
   return (
-    <Flex gap={2} position="absolute" bottom={0} insetInlineEnd={0}>
+    <Flex gap={2} position="absolute" bottom={2} insetInlineEnd={2}>
       {shouldShowMinimapPanel && (
         <ChakraMiniMap
           pannable
